@@ -10,6 +10,7 @@ import curio
 import pytest
 import trio
 
+import asyncflow
 from asyncflow import (
     AsyncioFlow,
     CurioFlow,
@@ -290,3 +291,16 @@ class Tests:
 
         with pytest.warns(RuntimeWarning):
             runner(flow.execute)
+
+
+@pytest.mark.parametrize(
+    ["module_name", "flow_cls"], [("curio", CurioFlow), ("trio", TrioFlow)]
+)
+def test_module_unavailable(module_name, flow_cls, monkeypatch):
+    """Test an exception is raised when a required module is not
+    available.
+    """
+
+    monkeypatch.setattr(asyncflow, module_name, None)
+    with pytest.raises(RuntimeError):
+        flow_cls()
