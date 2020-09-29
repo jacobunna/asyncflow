@@ -1,3 +1,46 @@
+"""AsyncFlow executes functions concurrently while respecting
+dependencies between them.
+
+AsyncFlow generates "flows" which can be executed using asyncio_,
+trio_ or curio_.
+
+.. _asyncio: https://docs.python.org/3/library/asyncio.html
+.. _trio: https://trio.readthedocs.io/en/stable/
+.. _curio: https://curio.readthedocs.io/en/latest/
+
+Suppose you have four functions, ``setup()``, ``work_1()``,
+``work_2()`` and ``shutdown()``. ``setup()`` must be executed first,
+but ``work_1()`` and ``work_2()`` can be executed concurrently.
+``shutdown()`` can only be executed once all other functions have
+finished running. The following code achieves this using asyncio::
+
+    from asyncflow import AsyncioFlow
+    import asyncio
+
+    flow = AsyncioFlow()
+
+    @flow()
+    def setup(): ...
+
+    @flow(upstream=setup)
+    def work_1(): ...
+
+    @flow(upstream=setup)
+    def work_2(): ...
+
+    @flow(upstream=[work_1, work_2])
+    def shutdown(): ...
+
+    asyncio.run(flow.execute())
+
+AsyncFlow will:
+
+#. Execute ``setup()`` and wait for it to finish;
+#. Execute ``work_1()`` and ``work_2()`` concurrently and wait for both
+   to finish;
+#. Execute ``shutdown()`` and wait for it to finish.
+"""
+
 from __future__ import annotations
 
 import abc
@@ -130,6 +173,7 @@ class TaskManagerType(SupportsAsyncWith["TaskManagerType"], Protocol):
 
 
 class BaseFlow(abc.ABC):
+    """Base class for a flow. """
 
     _jobs: Dict[Job, JobInfo]
     _locks: Dict[LockPlaceholder, Optional[LockLike]]
@@ -143,28 +187,58 @@ class BaseFlow(abc.ABC):
 
     @abc.abstractmethod
     def _get_task_manager(self) -> TaskManagerType:
-        #  context manager
-        #  when we exit, it awaits all the tasks added to it
-        # tasks are added using ``await tm.run_soon()``
-        pass
+        """Get a task manager that adheres to the
+        :class:`TaskManagerType` protocol.
+
+        :return: the task manager
+        """
 
     @abc.abstractmethod
     def _lock_factory(self) -> LockLike:
-        pass
+        """Get a lock.
+
+        :return: the lock
+        """
 
     @abc.abstractmethod
     def _semaphore_factory(self, value: int) -> LockLike:
-        pass
+        """Get a semaphore.
+
+        :param value: the value of the semaphore i.e. the number of
+            parties that can hold the semaphore at one time.
+        :return: the semaphore
+        """
 
     @abc.abstractmethod
     async def _run_in_executor(self, func: Job) -> None:
-        pass
+        """Run ``func`` in a thread and await completion.
+
+        :param func: the function to run
+        """
 
     @staticmethod
     def _iscoroutinefunction(func: Job) -> bool:
+        """Ascertain whether ``func`` is a coroutine function or a
+        synchronous function.
+
+        This is overridden by :class:`CurioFlow` since curio provides
+        its own implementation of ``asyncio.iscoroutinefunction``. For
+        asyncio and trio this is not overridden.
+
+        :return: ``True`` if ``func`` is a coroutine function or
+            ``False`` if ``func`` is a synchronous function.
+        """
+
         return cast(bool, asyncio.iscoroutinefunction(func))
 
     def __init__(self, spec: Union[Sequence, Parallel, None] = None) -> None:
+        """Create a flow.
+
+        :param spec: optionally specify a specification using a
+            combination of :class:`Sequence` and :class:`Parallel`
+            instances.
+        """
+
         validation_result = self._validate()
         if not validation_result.result:
             raise RuntimeError(
