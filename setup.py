@@ -29,5 +29,5 @@ setuptools.setup(
     keywords="concurrency thread async asyncio curio trio parallelism",
     py_modules=["asyncflow"],
     python_requires=">=3.8",
-    extras_require={"dev": ["pytest", "sphinx", "curio", "trio"]},
+    extras_require={"dev": ["pytest", "sphinx>=3,<4", "curio", "trio"]},
 )
