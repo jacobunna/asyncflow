@@ -3,6 +3,10 @@ AsyncFlow
 
 Concurrency made easy.
 
+.. image:: https://readthedocs.org/projects/asyncflow/badge/?version=latest
+    :target: https://asyncflow.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
+
 Installation
 ------------
 
