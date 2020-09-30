@@ -90,25 +90,92 @@ __all__ = [
 
 
 class Sequence:
+    """Define a flow as a succession of operations.
+
+    For example, if functions ``f``, ``g`` and ``h`` should be executed
+    sequentially, this can be specified with ::
+
+        Sequence(f, g, h)
+
+    This can be combined with :class:`Parallel` to create complex flows
+    programatically.
+    """
+
     def __init__(self, *args: Union[Sequence, Parallel, WithLock, Job]) -> None:
         self.args = args
 
 
 class Parallel:
+    """Define a flow as a set of parallel operations.
+
+    For example, if functions ``f``, ``g`` and ``h`` can all run in
+    parallel, this can be specified with ::
+
+        Parallel(f, g, h)
+
+    This can be combined with :class:`Sequence` to create complex flows
+    programatically.
+    """
+
     def __init__(self, *args: Union[Sequence, Parallel, WithLock, Job]) -> None:
         self.args = args
 
 
 class WithLock(NamedTuple):
+    """Require a lock to be acquired.
+
+    This is used to add a lock to a function when the flow is specified
+    with :class:`Sequence` or :class:`Parallel`. It is not required
+    when using the decorator-based API.
+
+    For example, in the following, ``flow`` will allow up to 2 of the
+    functions ``f``, ``g`` and ``h`` to run at a time::
+
+        from asyncflow import Parallel, WithLock, Semaphore
+
+        s = Semaphore(2)
+
+        flow = AsyncioFlow(Parallel(
+            WithLock(f, s),
+            WithLock(g, s),
+            WithLock(h, s)
+        )
+
+    :param func: the function
+    :param lock: the lock to associate with ``func``
+    """
+
     func: Job
     lock: LockPlaceholder
 
 
 class Lock:
-    pass
+    """Create a lock.
+
+    When provided to a function in a flow, the function will only run
+    when no other function with the lock is running.
+
+    Locks can be passed with the decorator based API using the ``lock``
+    argument, ::
+
+        @flow(lock=l)
+        def f(): ...
+
+    or the programmatic API using :class:`WithLock` ::
+
+        flow = Sequence(WithLock(f, l))
+    """
 
 
 class Semaphore:
+    """Create a semaphore.
+
+    This is the same as :class:`Lock` but it can be acquired multiple
+    times.
+
+    :param value: the number of times the semaphore can be acquired.
+    """
+
     def __init__(self, value: int) -> None:
         self._value = value
 
@@ -121,6 +188,8 @@ class JobInfo(NamedTuple):
 
 
 class UpstreamDownstream(NamedTuple):
+    """Functions upstream and downstream of some reference point. """
+
     upstream: DependencyType
     downstream: DependencyType
 
@@ -144,6 +213,8 @@ RetType = TypeVar("RetType", covariant=True)
 
 
 class SupportsAsyncWith(Protocol[RetType]):
+    """Type definition for objects that support ``async with``. """
+
     async def __aenter__(self) -> RetType:
         pass
 
@@ -156,7 +227,10 @@ class SupportsAsyncWith(Protocol[RetType]):
         pass
 
 
+# pylint: disable=missing-function-docstring
 class LockLike(SupportsAsyncWith[None], Protocol):
+    """Type definition for an object with a lock-like interface. """
+
     async def acquire(self) -> bool:
         pass
 
@@ -165,6 +239,10 @@ class LockLike(SupportsAsyncWith[None], Protocol):
 
 
 class TaskManagerType(SupportsAsyncWith["TaskManagerType"], Protocol):
+    """Type definition for an object that has a task manager
+    interface.
+    """
+
     async def run_soon(self, func: AsyncFunc, *args: Any, name: str) -> None:
         pass
 
@@ -173,7 +251,25 @@ class TaskManagerType(SupportsAsyncWith["TaskManagerType"], Protocol):
 
 
 class BaseFlow(abc.ABC):
-    """Base class for a flow. """
+    """Base class for a flow.
+
+    There are two APIs available to construct flows. The first is to
+    instantiate a flow with no arguments and use the flow object to
+    decorate functions::
+
+        flow = AsyncioFlow()
+        @flow()
+        def f(): ...
+
+    The second is to pass a :class:`Series` or :class:`Parallel` object
+    to the constructor::
+
+        dag = Series(Parallel(f, g), h)
+        flow = AsyncioFlow(dag)
+
+    :param spec: optionally provide a :class:`Series` or
+        :class:`Parallel` object to specify the flow
+    """
 
     _jobs: Dict[Job, JobInfo]
     _locks: Dict[LockPlaceholder, Optional[LockLike]]
@@ -182,7 +278,7 @@ class BaseFlow(abc.ABC):
     def _validate(self) -> InstantiationResult:
         """Ascertain whether this class can be instantiated.
 
-        :return: result of the valiation
+        :return: result of the validation
         """
 
     @abc.abstractmethod
@@ -251,7 +347,9 @@ class BaseFlow(abc.ABC):
             self._from_sp_spec(spec, previous=None)
 
     def _from_sp_spec(
-        self, spec: Union[Sequence, Parallel], previous: UpstreamType,
+        self,
+        spec: Union[Sequence, Parallel],
+        previous: UpstreamType,
     ) -> UpstreamType:
 
         if isinstance(spec, Sequence):
@@ -295,6 +393,21 @@ class BaseFlow(abc.ABC):
     def __call__(
         self, upstream: UpstreamType = None, lock: LockPlaceholder = None
     ) -> Callable[[Job], Job]:
+        """Add a function to a flow.
+
+        :class:`BaseFlow` objects can be used as a decorator to add
+        functions to the flow::
+
+            flow = AsyncioFlow()  # inherits from ``BaseFlow``
+            @flow()
+            def f(): ...
+
+        :param upstream: a function or a list of functions that must
+            complete execution before this function can be executed
+        :param lock: a lock that needs to be acquired before this
+            function can run
+        """
+
         def decorator(func: Job) -> Job:
             self._add_job(func, upstream=upstream, lock=lock)
             return func
@@ -410,11 +523,14 @@ class BaseFlow(abc.ABC):
 
 
 class AsyncioFlow(BaseFlow):
+    """Like :class:`BaseFlow` but for the Asyncio runtime. """
+
     def _validate(self) -> InstantiationResult:
         # asyncio is part of the standard library, so it is always available
         return InstantiationResult(True, None)
 
     def _get_task_manager(self) -> TaskManagerType:
+        # pylint: disable=missing-class-docstring
         class TaskManager:
 
             _tasks: List[asyncio.Task]
@@ -451,11 +567,14 @@ class AsyncioFlow(BaseFlow):
 
 
 class CurioFlow(BaseFlow):
+    """Like :class:`BaseFlow` but for the Curio runtime. """
+
     def _validate(self) -> InstantiationResult:
         if curio is None:
             return InstantiationResult(False, "module `curio` could not be imported")
         return InstantiationResult(True, None)
 
+    # pylint: disable=missing-class-docstring, unused-argument
     def _get_task_manager(self) -> TaskManagerType:
         class ModifiedTaskGroup(curio.TaskGroup):
             async def run_soon(self, func: AsyncFunc, *args: Any, name: str) -> None:
@@ -480,12 +599,15 @@ class CurioFlow(BaseFlow):
 
 
 class TrioFlow(BaseFlow):
+    """Like :class:`BaseFlow` but for the Trio runtime. """
+
     def _validate(self) -> InstantiationResult:
         if trio is None:
             return InstantiationResult(False, "module `trio` could not be imported")
         return InstantiationResult(True, None)
 
     def _get_task_manager(self) -> TaskManagerType:
+        # pylint: disable=missing-class-docstring, unused-argument
         class TaskManager:
             _nursery: trio.Nursery
             _cm: trio.Nursery

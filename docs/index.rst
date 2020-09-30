@@ -22,15 +22,6 @@ Install using pip:
 Introduction
 ------------
 
-.. figure:: 1.jpg
-    :height: 347px
-    :alt: Example of a DAG
-    :align: right
-    :figwidth: image
-
-    Figure 1: A DAG can be used to understand the possible execution
-    paths a program can take.
-
 It is often rightly said that concurrency is hard. In the concurrent
 world, it is difficult to reason about what lines of code
 will execute when, since, by design, this is non-determinate. This can lead to
@@ -40,6 +31,15 @@ AsyncFlow simplifies concurrency by requiring the programmer to write
 functions and then tie them together by specifying their
 interdependencies. Conceptually this creates a directed acyclic graph
 (DAG).
+
+.. figure:: 1.jpg
+    :height: 347px
+    :alt: Example of a DAG
+    :align: center
+    :figwidth: image
+
+    Figure 1: A DAG can be used to understand the possible execution
+    paths a program can take.
 
 Figure 1 shows an example of such a DAG of eight functions,
 labelled ``f`` through ``m``. At the outset, ``f`` and ``g`` can be
@@ -194,7 +194,7 @@ After ``f`` and ``g`` have finished, ``h``, ``i`` and ``j`` are ready
 to run, but a maximum of two of these will run at any one time since
 they must acquire ``s``.
 
-Programatic Flow Specification
+Alternative Flow Specification
 ------------------------------
 
 At times the decorator based API for specifying flows may be
